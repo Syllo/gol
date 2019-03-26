@@ -31,8 +31,34 @@
 #include "board.h"
 #include "life.h"
 
-static void get_next_generation_life(const struct gol_board *previous,
-                                     struct gol_board *next) {
+__attribute__((const)) static inline bool is_alive_life(bool previous_state,
+                                                        size_t num_alive) {
+  switch (num_alive) {
+  case 3:
+    return true;
+  case 2:
+    return previous_state;
+  default:
+    return false;
+  }
+}
+
+__attribute__((const)) static inline bool is_alive_hilife(bool previous_state,
+                                                          size_t num_alive) {
+  switch (num_alive) {
+  case 3:
+  case 6:
+    return true;
+  case 2:
+    return previous_state;
+  default:
+    return false;
+  }
+}
+
+static void get_next_generation(const struct gol_board *previous,
+                                struct gol_board *next,
+                                bool (*new_state)(bool, size_t)) {
   struct gol_board_bounds previous_bounds = get_game_bounds(previous);
   for (intmax_t i = previous_bounds.lowerX - 1; i <= previous_bounds.upperX + 1;
        ++i) {
@@ -45,49 +71,36 @@ static void get_next_generation_life(const struct gol_board *previous,
           num_alive += read_gol_board(k, l, previous) ? 1 : 0;
         }
       }
-      switch (num_alive) {
-      case 3:
+      if (new_state(val, num_alive))
         write_gol_board(i, j, true, next);
-        break;
-      case 2:
-        write_gol_board(i, j, val, next);
-        break;
-      default:
-        write_gol_board(i, j, false, next);
-        break;
-      }
     }
   }
 }
 
-static void get_next_generation_highLife(const struct gol_board *previous,
-                                         struct gol_board *next) {
-  struct gol_board_bounds previous_bounds = get_game_bounds(previous);
-  for (intmax_t i = previous_bounds.lowerX - 1; i <= previous_bounds.upperX + 1;
-       ++i) {
-    for (intmax_t j = previous_bounds.lowerY - 1;
-         j <= previous_bounds.upperY + 1; ++j) {
-      bool val = read_gol_board(i, j, previous);
-      size_t num_alive = val ? SIZE_MAX : 0;
-      for (intmax_t k = i - 1; k <= i + 1; ++k) {
-        for (intmax_t l = j - 1; l <= j + 1; ++l) {
-          num_alive += read_gol_board(k, l, previous) ? 1 : 0;
+static void get_next_generation_iterator(struct gol_board *previous,
+                                         struct gol_board *next,
+                                         bool (*new_state)(bool, size_t)) {
+  struct gol_board_iterator *it = board_iterator_start(previous);
+  while (!board_iterator_is_end(it)) {
+    const struct gol_board_iterator_position pos = board_iterator_position(it);
+    for (intmax_t k = pos.posX - 1; k <= pos.posX + 1; ++k) {
+      for (intmax_t l = pos.posY - 1; l <= pos.posY + 1; ++l) {
+        if (!read_gol_board(k, l, next)) {
+          bool val = read_gol_board(k, l, previous);
+          size_t num_alive = val ? SIZE_MAX : 0;
+          for (intmax_t i = k - 1; i <= k + 1; ++i) {
+            for (intmax_t j = l - 1; j <= l + 1; ++j) {
+              num_alive += read_gol_board(i, j, previous) ? 1 : 0;
+            }
+          }
+          if (new_state(val, num_alive))
+            write_gol_board(k, l, true, next);
         }
       }
-      switch (num_alive) {
-      case 3:
-      case 6:
-        write_gol_board(i, j, true, next);
-        break;
-      case 2:
-        write_gol_board(i, j, val, next);
-        break;
-      default:
-        write_gol_board(i, j, false, next);
-        break;
-      }
     }
+    it = board_iterator_next(it);
   }
+  board_iterator_free(it);
 }
 
 static inline void center_offset(struct gol_board_bounds *bounds,
@@ -98,7 +111,8 @@ static inline void center_offset(struct gol_board_bounds *bounds,
 }
 
 void evolve_to_generation_n(size_t generation,
-                            struct gol_board *const start_gen, bool verbose) {
+                            struct gol_board *const start_gen, bool verbose,
+                            bool iterator) {
   if (generation == 0)
     return;
   struct gol_board_bounds bounds;
@@ -117,6 +131,16 @@ void evolve_to_generation_n(size_t generation,
     verbose_step = 1;
     percentage = 100. / (float)generation;
   }
+  bool (*life_count)(bool,size_t) = NULL;
+  switch (rule) {
+    case highLifeRule:
+      life_count = is_alive_hilife;
+      break;
+    case lifeRule:
+    default:
+      life_count = is_alive_life;
+      break;
+  }
   // Kernel
   for (size_t i = 0; i < generation; ++i) {
     if (verbose && i % verbose_step == 0) {
@@ -127,16 +151,10 @@ void evolve_to_generation_n(size_t generation,
     bounds = get_game_bounds(current_gen);
     // Re-center the to spare memory
     center_offset(&bounds, next_gen);
-    switch (rule) {
-    case lifeRule:
-      get_next_generation_life(current_gen, next_gen);
-      break;
-    case highLifeRule:
-      get_next_generation_highLife(current_gen, next_gen);
-      break;
-    default:
-      break;
-    }
+    if (iterator)
+      get_next_generation_iterator(current_gen, next_gen, life_count);
+    else
+      get_next_generation(current_gen, next_gen, life_count);
     struct gol_board *swap_b = current_gen;
     current_gen = next_gen;
     next_gen = swap_b;

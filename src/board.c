@@ -101,12 +101,64 @@ struct gol_board {
   enum gol_rules rule;
 };
 
+struct gol_board_iterator {
+  struct gol_board *board;
+  enum bb_direction current_bb_dir;
+  size_t current_bb_index;
+  size_t posXinBB, posYinBB;
+};
+
 struct board_position {
-  size_t bbPositionX;
-  size_t bbPositionY;
-  size_t position_in_bb;
+  size_t XPosInbb;
+  size_t YPosInbb;
+  size_t bb_offset;
   enum bb_direction direction;
 };
+
+__attribute__((const)) static inline size_t integerSqrt(size_t n) {
+  size_t shift = 2;
+  size_t nshifted = n >> shift;
+  while (nshifted != 0 && nshifted != n) {
+    shift += 2;
+    nshifted = n >> shift;
+  }
+  size_t result = 0;
+  size_t shiftSave = shift;
+  while (shift <= shiftSave) {
+    result = result << 1;
+    size_t candidate = result + 1;
+    if (candidate * candidate <= n >> shift)
+      result = candidate;
+    shift -= 2;
+  }
+  return result;
+}
+
+__attribute__((const)) static inline struct gol_board_iterator_position
+board_to_cartesian_position(struct board_position bp) {
+  size_t quot = integerSqrt(bp.bb_offset);
+  size_t rem = bp.bb_offset - quot * quot;
+  size_t bbYoffset = quot - (rem > quot ? rem - quot : 0);
+  size_t bbXoffset = rem < quot ? rem : quot;
+  struct gol_board_iterator_position position = {
+      .posX = (intmax_t)(bp.XPosInbb + bbXoffset * BLOCKSIZE),
+      .posY = (intmax_t)(bp.YPosInbb + bbYoffset * BLOCKSIZE)};
+  switch (bp.direction) {
+  case bb_se:
+    position.posY = -(position.posY + 1);
+    break;
+  case bb_sw:
+    position.posX = -(position.posX + 1);
+    position.posY = -(position.posY + 1);
+    break;
+  case bb_nw:
+    position.posX = -(position.posX + 1);
+    break;
+  default:
+    break;
+  }
+  return position;
+}
 
 __attribute__((const)) static inline struct board_position
 position_in_board_structure(intmax_t posX, intmax_t posY) {
@@ -121,13 +173,13 @@ position_in_board_structure(intmax_t posX, intmax_t posY) {
     bp.direction++;
   }
   intmax_t divX = posX / intdef(MAX, BLOCKSIZE);
-  bp.bbPositionX = (size_t)(posX % intdef(MAX, BLOCKSIZE));
+  bp.XPosInbb = (size_t)(posX % intdef(MAX, BLOCKSIZE));
   intmax_t divY = posY / intdef(MAX, BLOCKSIZE);
-  bp.bbPositionY = (size_t)(posY % intdef(MAX, BLOCKSIZE));
+  bp.YPosInbb = (size_t)(posY % intdef(MAX, BLOCKSIZE));
   if (posX < posY) {
-    bp.position_in_bb = (size_t)(divY * divY + divX);
+    bp.bb_offset = (size_t)(divY * divY + divX);
   } else {
-    bp.position_in_bb = (size_t)(divX * divX + intdef(MAX, 2) * divX - divY);
+    bp.bb_offset = (size_t)(divX * divX + intdef(MAX, 2) * divX - divY);
   }
   return bp;
 }
@@ -136,11 +188,11 @@ bool read_gol_board(intmax_t posX, intmax_t posY, const struct gol_board *b) {
   struct board_position pos =
       position_in_board_structure(posX + b->offsetX, posY + b->offsetY);
   struct basic_block *bb_to_search =
-      b->size_bb_buffer[pos.direction] > pos.position_in_bb
-          ? b->bb_buffer[pos.direction][pos.position_in_bb]
+      b->size_bb_buffer[pos.direction] > pos.bb_offset
+          ? b->bb_buffer[pos.direction][pos.bb_offset]
           : NULL;
   return bb_to_search != NULL &&
-         read_in_block(pos.bbPositionX, pos.bbPositionY, bb_to_search);
+         read_in_block(pos.XPosInbb, pos.YPosInbb, bb_to_search);
 }
 
 static inline void realloc_bb_buffer(size_t new_size, size_t *current_size,
@@ -163,12 +215,12 @@ void write_gol_board(intmax_t posX, intmax_t posY, bool val,
                      struct gol_board *b) {
   struct board_position pos =
       position_in_board_structure(posX + b->offsetX, posY + b->offsetY);
-  realloc_bb_buffer(pos.position_in_bb + 1, &b->size_bb_buffer[pos.direction],
+  realloc_bb_buffer(pos.bb_offset + 1, &b->size_bb_buffer[pos.direction],
                     &b->bb_buffer[pos.direction]);
-  if (b->bb_buffer[pos.direction][pos.position_in_bb] == NULL)
-    b->bb_buffer[pos.direction][pos.position_in_bb] = get_new_empty_bb(b);
-  write_in_block(b->bb_buffer[pos.direction][pos.position_in_bb],
-                 pos.bbPositionX, pos.bbPositionY, val);
+  if (b->bb_buffer[pos.direction][pos.bb_offset] == NULL)
+    b->bb_buffer[pos.direction][pos.bb_offset] = get_new_empty_bb(b);
+  write_in_block(b->bb_buffer[pos.direction][pos.bb_offset], pos.XPosInbb,
+                 pos.YPosInbb, val);
   if (val) {
     b->board_bounds.upperX = max(b->board_bounds.upperX, posX);
     b->board_bounds.lowerX = min(b->board_bounds.lowerX, posX);
@@ -377,4 +429,80 @@ void get_offset(const struct gol_board *board, intmax_t *offsetX,
                 intmax_t *offsetY) {
   *offsetX = board->offsetX;
   *offsetY = board->offsetY;
+}
+
+struct gol_board_iterator* board_iterator_start(struct gol_board *b) {
+  struct gol_board_iterator it = {.board = b,
+                                  .current_bb_dir = bb_ne,
+                                  .current_bb_index = 0,
+                                  .posXinBB = 0,
+                                  .posYinBB = 0};
+  struct gol_board_iterator *iterator = malloc(sizeof(*iterator));
+  *iterator = it;
+  if (read_gol_board(b->offsetX, b->offsetY, b))
+    return iterator;
+  else
+    return board_iterator_next(iterator);
+}
+
+bool board_iterator_is_end(struct gol_board_iterator *it) {
+  return it->current_bb_dir == bb_all_dirs;
+}
+
+struct gol_board_iterator* board_iterator_next(struct gol_board_iterator *it) {
+  bool continue_from_iterator = true;
+  for (enum bb_direction dir = it->current_bb_dir; dir < bb_all_dirs; ++dir) {
+    if (continue_from_iterator && it->current_bb_dir != dir)
+      continue_from_iterator = false;
+    size_t bb_start_index = continue_from_iterator ? it->current_bb_index : 0;
+    for (size_t bb_index = bb_start_index;
+         bb_index < it->board->size_bb_buffer[dir]; ++bb_index) {
+      if (it->board->bb_buffer[dir][bb_index] == NULL)
+        continue;
+      if (continue_from_iterator && bb_index != it->current_bb_index)
+        continue_from_iterator = false;
+      size_t in_bb_startX = continue_from_iterator ? it->posXinBB : 0;
+      for (size_t i = in_bb_startX; i < BLOCKSIZE; ++i) {
+        if (continue_from_iterator && i != it->posXinBB)
+          continue_from_iterator = false;
+        size_t in_bb_startY = continue_from_iterator ? it->posYinBB + 1 : 0;
+        for (size_t j = in_bb_startY; j < BLOCKSIZE; ++j) {
+          if (read_in_block(i, j, it->board->bb_buffer[dir][bb_index])) {
+            it->current_bb_dir = dir;
+            it->current_bb_index = bb_index;
+            it->posXinBB = i;
+            it->posYinBB = j;
+            return it;
+          }
+        }
+      }
+    }
+  }
+  it->current_bb_dir = bb_all_dirs;
+  return it;
+}
+
+struct gol_board_iterator_position
+board_iterator_position(struct gol_board_iterator *iter) {
+  struct board_position bp = {.XPosInbb = iter->posXinBB,
+                              .YPosInbb = iter->posYinBB,
+                              .bb_offset = iter->current_bb_index,
+                              .direction = iter->current_bb_dir};
+  struct gol_board_iterator_position pos = board_to_cartesian_position(bp);
+  pos.posX -= iter->board->offsetX;
+  pos.posY -= iter->board->offsetY;
+  return pos;
+}
+
+bool board_iterator_equal(struct gol_board_iterator *it1,
+                          struct gol_board_iterator *it2) {
+  return (it1->current_bb_dir == it2->current_bb_dir &&
+          it1->current_bb_dir == bb_all_dirs) ||
+         (it1->current_bb_dir == it2->current_bb_dir && it1->board == it2->board &&
+          it1->current_bb_index && it2->current_bb_index &&
+          it1->posXinBB == it2->posXinBB && it1->posYinBB == it2->posYinBB);
+}
+
+void board_iterator_free(struct gol_board_iterator *it) {
+  free(it);
 }

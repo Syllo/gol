@@ -47,9 +47,10 @@ static struct option opt_options[] = {
     {"force-life", no_argument, 0, 'l'},
     {"force-highlife", no_argument, 0, 'L'},
     {"ascii-output", no_argument, 0, 'a'},
+    {"iterator", no_argument, 0, 'i'},
     {0, 0, 0, 0}};
 
-static const char options[] = ":ho:c:g:lLav";
+static const char options[] = ":ho:c:g:lLavi";
 
 static const char help_string[] =
     "Options:"
@@ -59,6 +60,7 @@ static const char help_string[] =
     "\n  -l --force-life      : Select Life rule"
     "\n  -L --force-highlife  : Select HighLife rule"
     "\n  -a --ascii-output    : Output grid as ASCII"
+    "\n  -i --iterator        : Use grid sparse iterator"
     "\n  -v --verbose         : Print solver avancement information"
     "\n  -h --help            : Print this help";
 
@@ -70,6 +72,7 @@ int main(int argc, char **argv) {
   bool force_highlife = false;
   bool output_ascii = false;
   bool verbose = false;
+  bool use_iterator = false;
 
   while (true) {
     int sscanf_return;
@@ -106,6 +109,9 @@ int main(int argc, char **argv) {
       break;
     case 'v':
       verbose = true;
+      break;
+    case 'i':
+      use_iterator = true;
       break;
     case 'h':
       printf("Usage: %s <options> start_generation.rle\n%s\n", argv[0],
@@ -161,7 +167,7 @@ int main(int argc, char **argv) {
 
   time_measure startTime, endTime;
   get_current_time(&startTime);
-  evolve_to_generation_n(goto_generation, game->board, verbose);
+  evolve_to_generation_n(goto_generation, game->board, verbose, use_iterator);
   get_current_time(&endTime);
   fprintf(stdout, "Kernel time %.4fs\n",
           measuring_difftime(startTime, endTime));

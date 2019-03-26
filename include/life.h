@@ -36,6 +36,6 @@
 #include "board.h"
 
 void evolve_to_generation_n(size_t generation, struct gol_board *start_gen,
-                            bool verbose);
+                            bool verbose, bool iterator);
 
 #endif // LIFE_H_

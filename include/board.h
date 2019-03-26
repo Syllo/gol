@@ -50,6 +50,10 @@ extern char *gol_rule_string[unknownRule];
 
 struct gol_board;
 
+struct gol_board_iterator_position {
+  intmax_t posX, posY;
+};
+
 __attribute__((pure)) bool read_gol_board(intmax_t posX, intmax_t posY,
                                           const struct gol_board *b);
 
@@ -68,7 +72,6 @@ void free_board(struct gol_board *b);
 void set_offset(intmax_t offsetX, intmax_t offsetY, struct gol_board *b);
 
 void set_game_rules(enum gol_rules rule, struct gol_board *b);
-
 __attribute__((pure)) enum gol_rules get_game_rules(const struct gol_board *b);
 
 void gol_copy_board(const struct gol_board *to_copy, struct gol_board *copy);
@@ -102,5 +105,17 @@ void add_comment(const char *comment, struct gol_game *b);
 void set_author(const char *authorName, struct gol_game *b);
 
 void set_pattern_name(const char *pName, struct gol_game *b);
+
+struct gol_board_iterator* board_iterator_start(struct gol_board *b);
+
+void board_iterator_free(struct gol_board_iterator *it);
+
+bool board_iterator_is_end(struct gol_board_iterator *it);
+
+struct gol_board_iterator* board_iterator_next(struct gol_board_iterator *it);
+
+struct gol_board_iterator_position board_iterator_position(struct gol_board_iterator *it);
+
+bool board_iterator_equal(struct gol_board_iterator *it1, struct gol_board_iterator *it2);
 
 #endif
