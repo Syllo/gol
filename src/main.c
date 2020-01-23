@@ -182,6 +182,7 @@ int main(int argc, char **argv) {
   if (rle_to_compare)
     same_board = gol_same_board(game->board, comparison_board->board);
 
+  fprintf(stdout, "Percent allocated %e%%\n", percent_allocated(game));
   free_game(game);
   free_game(comparison_board);
   if (output_file)

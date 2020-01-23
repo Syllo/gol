@@ -431,7 +431,7 @@ void get_offset(const struct gol_board *board, intmax_t *offsetX,
   *offsetY = board->offsetY;
 }
 
-struct gol_board_iterator* board_iterator_start(struct gol_board *b) {
+struct gol_board_iterator *board_iterator_start(struct gol_board *b) {
   struct gol_board_iterator it = {.board = b,
                                   .current_bb_dir = bb_ne,
                                   .current_bb_index = 0,
@@ -449,7 +449,7 @@ bool board_iterator_is_end(struct gol_board_iterator *it) {
   return it->current_bb_dir == bb_all_dirs;
 }
 
-struct gol_board_iterator* board_iterator_next(struct gol_board_iterator *it) {
+struct gol_board_iterator *board_iterator_next(struct gol_board_iterator *it) {
   bool continue_from_iterator = true;
   for (enum bb_direction dir = it->current_bb_dir; dir < bb_all_dirs; ++dir) {
     if (continue_from_iterator && it->current_bb_dir != dir)
@@ -498,11 +498,59 @@ bool board_iterator_equal(struct gol_board_iterator *it1,
                           struct gol_board_iterator *it2) {
   return (it1->current_bb_dir == it2->current_bb_dir &&
           it1->current_bb_dir == bb_all_dirs) ||
-         (it1->current_bb_dir == it2->current_bb_dir && it1->board == it2->board &&
-          it1->current_bb_index && it2->current_bb_index &&
-          it1->posXinBB == it2->posXinBB && it1->posYinBB == it2->posYinBB);
+         (it1->current_bb_dir == it2->current_bb_dir &&
+          it1->board == it2->board && it1->current_bb_index &&
+          it2->current_bb_index && it1->posXinBB == it2->posXinBB &&
+          it1->posYinBB == it2->posYinBB);
 }
 
-void board_iterator_free(struct gol_board_iterator *it) {
-  free(it);
+void board_iterator_free(struct gol_board_iterator *it) { free(it); }
+
+double percent_allocated(struct gol_game *game) {
+  struct gol_board *board = game->board;
+  struct gol_board_bounds bounds = board->board_bounds;
+  intmax_t sizeX = bounds.upperX - bounds.lowerX;
+  intmax_t sizeY = bounds.upperX - bounds.lowerX;
+  size_t blocks_allocated = 0;
+  struct board_position quadrant1 =
+      position_in_board_structure(bounds.lowerX, bounds.lowerY);
+  for (size_t off = 0; off <= quadrant1.bb_offset &&
+                       off < board->size_bb_buffer[quadrant1.direction];
+       ++off) {
+    if (board->bb_buffer[quadrant1.direction][off]) {
+      blocks_allocated++;
+    }
+  }
+  struct board_position quadrant2 =
+      position_in_board_structure(bounds.lowerX, bounds.upperY);
+  for (size_t off = 0; off <= quadrant2.bb_offset &&
+                       off < board->size_bb_buffer[quadrant2.direction];
+       ++off) {
+    if (board->bb_buffer[quadrant2.direction][off]) {
+      blocks_allocated++;
+    }
+  }
+  struct board_position quadrant3 =
+      position_in_board_structure(bounds.upperX, bounds.lowerY);
+  for (size_t off = 0; off <= quadrant3.bb_offset &&
+                       off < board->size_bb_buffer[quadrant3.direction];
+       ++off) {
+    if (board->bb_buffer[quadrant3.direction][off]) {
+      blocks_allocated++;
+    }
+  }
+  struct board_position quadrant4 =
+      position_in_board_structure(bounds.upperX, bounds.upperY);
+  for (size_t off = 0; off <= quadrant4.bb_offset &&
+                       off < board->size_bb_buffer[quadrant4.direction];
+       ++off) {
+    if (board->bb_buffer[quadrant4.direction][off]) {
+      blocks_allocated++;
+    }
+  }
+  size_t num_allocated = blocks_allocated * BLOCKSIZE * BLOCKSIZE;
+  double num_allocated_d = (double)num_allocated;
+  size_t total_size = sizeX * sizeY;
+  double total_size_d = (double)total_size;
+  return num_allocated_d / total_size_d * 100.;
 }

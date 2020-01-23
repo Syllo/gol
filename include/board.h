@@ -118,4 +118,6 @@ struct gol_board_iterator_position board_iterator_position(struct gol_board_iter
 
 bool board_iterator_equal(struct gol_board_iterator *it1, struct gol_board_iterator *it2);
 
+double percent_allocated(struct gol_game *game);
+
 #endif
